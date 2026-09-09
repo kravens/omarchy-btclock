@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "kravens.btclock",
+  "name": "BTClock",
+  "version": "1.0.0",
+  "author": "kravens",
+  "description": "Bitcoin block height, fiat price, Moscow time and mempool fee rates on a row of BTClock-style panels",
+  "homepage": "https://github.com/kravens/omarchy-btclock",
+  "license": "MIT",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "BTClock",
+    "description": "Rotates block height, fiat price, sats per fiat and low/med/high fee rates across little e-paper panels",
+    "category": "Bitcoin",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "rotateSeconds": 21,
+      "refreshSeconds": 60,
+      "cells": 7,
+      "mode": "dark",
+      "currency": "USD"
+    },
+    "schema": [
+      { "key": "rotateSeconds", "type": "int", "label": "Seconds per screen" },
+      { "key": "refreshSeconds", "type": "int", "label": "Data refresh interval" },
+      { "key": "cells", "type": "int", "label": "Number of panels" },
+      { "key": "mode", "type": "string", "label": "Panel mode (dark or light)" },
+      { "key": "currency", "type": "string", "label": "Fiat currency (USD, EUR, GBP, JPY, CHF, CAD, AUD)" }
+    ]
+  }
+}

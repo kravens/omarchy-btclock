@@ -1,0 +1,107 @@
+#!/usr/bin/bash
+#
+# btc-status - print one bounded JSON line describing the Bitcoin network.
+#
+# Writes no files and keeps no state: every invocation fetches, validates and
+# prints to stdout. The two origins are constants, there are no credentials of
+# any kind, and nothing here reads user configuration.
+
+set -uo pipefail
+export LC_ALL=C
+
+readonly CURL=/usr/bin/curl
+readonly JQ=/usr/bin/jq
+readonly HEAD=/usr/bin/head
+
+# Producer-side ceiling. Each response is capped while streaming and then
+# rejected by length, so an overlong body fails rather than being truncated
+# into something that still parses.
+readonly MAX=65536
+
+readonly MEMPOOL=https://mempool.space
+readonly KRAKEN=https://api.kraken.com
+
+fail() {
+  printf '{"ok":false}\n'
+  exit 1
+}
+
+# Bounded HTTPS GET against a fixed origin. No -L, so a redirect is a failure
+# rather than a fetch from somewhere else.
+fetch() {
+  local url=$1
+  case $url in
+  "$MEMPOOL"/* | "$KRAKEN"/*) ;;
+  *) return 1 ;;
+  esac
+  "$CURL" -q -sS --fail \
+    --proto '=https' --proto-redir '=https' \
+    --connect-timeout 5 --max-time 10 \
+    --max-filesize "$MAX" --noproxy '*' \
+    -- "$url" |
+    "$HEAD" -c $((MAX + 1))
+}
+
+# Fetch, reject anything that reached the cap, and reject anything that is not
+# well-formed JSON before it can reach the assembly step.
+get_json() {
+  local out
+  out=$(fetch "$1") || return 1
+  [ ${#out} -le "$MAX" ] || return 1
+  printf '%s' "$out" | "$JQ" -e . >/dev/null 2>&1 || return 1
+  printf '%s' "$out"
+}
+
+height=$(fetch "$MEMPOOL/api/blocks/tip/height") || fail
+# Matched exactly, and never handed to bash arithmetic: inside $(( )) bash
+# would evaluate the contents of the value a second time.
+[[ $height =~ ^[0-9]{1,12}$ ]] || fail
+
+fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
+prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
+
+# Kraken is the fallback price feed the BTClock firmware itself uses. USD only.
+if [ "$prices" = null ]; then
+  kraken=$(get_json "$KRAKEN/0/public/Ticker?pair=XBTUSD") || kraken=null
+  if [ "$kraken" != null ]; then
+    prices=$(printf '%s' "$kraken" |
+      "$JQ" -c '{USD: (.result.XXBTZUSD.c[0] | tonumber)}' 2>/dev/null) || prices=null
+    [ -n "$prices" ] || prices=null
+  fi
+fi
+
+# Every value is passed as validated JSON, never interpolated into the program.
+# The currency map is filtered to three-letter keys holding finite positive
+# numbers and capped in cardinality, so a hostile response cannot grow the
+# document the widget then models.
+"$JQ" -cn \
+  --argjson height "$height" \
+  --argjson fees "$fees" \
+  --argjson prices "$prices" \
+  '
+  def fee($v):
+    if ($v | type) == "number" and $v >= 0 and $v <= 100000
+    then ($v | floor) else 0 end;
+
+  ( $prices
+    | if type == "object" then
+        to_entries
+        | map(select(
+            (.key | test("^[A-Z]{3}$"))
+            and (.value | type) == "number"
+            and .value > 0
+            and .value < 1e12))
+        | .[0:10]
+        | from_entries
+      else {} end
+  ) as $p
+  | {
+      height: $height,
+      prices: $p,
+      usd:  ($p.USD // 0),
+      low:  fee($fees.economyFee),
+      med:  fee($fees.halfHourFee),
+      high: fee($fees.fastestFee),
+      ok:   (($p | length) > 0)
+    }
+  ' || fail
