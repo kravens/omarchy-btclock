@@ -11,6 +11,15 @@ Firmware source lives at [git.btclock.dev](https://git.btclock.dev).
 
 ![preview](preview.png)
 
+And the same widget actually running, an unretouched 200x50 crop of a real bar
+at 1:1 with a sliver of wallpaper below it, so you can judge the size before
+installing:
+
+![screenshot](screenshot.png)
+
+Panel colours come from the active Omarchy theme — this one is a custom theme,
+so yours will match whatever you have applied.
+
 Four screens rotate in a single bar slot:
 
 | Screen | Example | What it is |
