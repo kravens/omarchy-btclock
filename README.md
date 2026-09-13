@@ -185,7 +185,9 @@ bash bin/btc-status --providers mempool.emzy.de,mempool.space | jq .
 ```
 
 `--providers` takes a comma-separated list, tried in order, and each name is
-matched against the same closed set as the widget uses.
+matched against the same closed set as the widget uses. With no argument every
+instance is tried, in preference order — the same list the widget sends — so the
+script on its own fails over exactly like the widget does.
 
 It prints `{"ok":false}` and exits non-zero only once every instance it was given
 has failed. While the widget is running that leaves the seven panels showing a

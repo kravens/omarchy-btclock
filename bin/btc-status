@@ -21,11 +21,10 @@ readonly HEAD=/usr/bin/head
 # into something that still parses.
 readonly MAX=65536
 
-# Public mempool instances that serve the same API. mempool.space is the
-# project's own instance and stays the default; the mirror is listed because some
-# networks cannot reach a given origin at all, so the mirror is the whole
-# difference between a working widget and a blank one.
-readonly DEFAULT_PROVIDER=mempool.space
+# Public mempool instances that serve the same API, in the order they are tried.
+# The first is the project's own instance and the widget's default preference;
+# the mirror is listed because some networks cannot reach a given origin at all,
+# which is the whole difference between a working widget and a blank one.
 readonly PROVIDERS="mempool.space mempool.emzy.de"
 
 # The caller kills this process at 30s, so stop starting new attempts well before
@@ -41,8 +40,10 @@ fail() {
 }
 
 # The instance order is the only argument this script accepts, and it is the only
-# value that ends up inside a URL it has not already seen.
-order=$DEFAULT_PROVIDER
+# value that ends up inside a URL it has not already seen. With no argument every
+# instance is tried, in the order above - the same list the widget sends - so the
+# script on its own fails over exactly like the widget does.
+order=${PROVIDERS// /,}
 while [ $# -gt 0 ]; do
   case ${1:-} in
   --providers)
