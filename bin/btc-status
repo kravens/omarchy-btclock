@@ -5,7 +5,9 @@
 # Writes no files and keeps no state: every invocation fetches, validates and
 # prints to stdout. The origins come from a closed set, there are no credentials
 # of any kind, and nothing here reads user configuration: the one option that
-# does arrive from outside, --provider, is matched against that set below.
+# does arrive from outside, --providers, is matched against that set below.
+# Instances are tried in the order given, so a network that cannot reach one of
+# them still gets a working widget from the next.
 
 set -uo pipefail
 export LC_ALL=C
@@ -20,11 +22,16 @@ readonly HEAD=/usr/bin/head
 readonly MAX=65536
 
 # Public mempool instances that serve the same API. mempool.space is the
-# project's own instance and stays the default; the others are listed because
-# some networks cannot reach a given origin at all, so the mirror is the whole
-# difference between a working widget and an invisible one.
+# project's own instance and stays the default; the mirror is listed because some
+# networks cannot reach a given origin at all, so the mirror is the whole
+# difference between a working widget and a blank one.
 readonly DEFAULT_PROVIDER=mempool.space
 readonly PROVIDERS="mempool.space mempool.emzy.de"
+
+# The caller kills this process at 30s, so stop starting new attempts well before
+# that: an unreachable origin must not spend the whole budget and leave the next
+# one untried.
+readonly DEADLINE=20
 
 readonly KRAKEN=https://api.kraken.com
 
@@ -33,32 +40,25 @@ fail() {
   exit 1
 }
 
-# The provider is the only argument this script accepts, and it is the only
+# The instance order is the only argument this script accepts, and it is the only
 # value that ends up inside a URL it has not already seen.
-provider=$DEFAULT_PROVIDER
+order=$DEFAULT_PROVIDER
 while [ $# -gt 0 ]; do
   case ${1:-} in
-  --provider)
+  --providers)
     [ $# -ge 2 ] || fail
-    provider=$2
+    order=$2
     shift 2
     ;;
   *) fail ;;
   esac
 done
 
-# Matched against the closed set: no host, port, path or scheme can be smuggled
-# in from configuration, because anything outside the list fails before a URL
-# is built from it.
-case " $PROVIDERS " in
-*" $provider "*) ;;
-*) fail ;;
-esac
-
-readonly MEMPOOL="https://$provider"
+IFS=, read -r -a requested <<<"$order"
 
 # Bounded HTTPS GET against a fixed origin. No -L, so a redirect is a failure
-# rather than a fetch from somewhere else.
+# rather than a fetch from somewhere else. The origin it will accept is the
+# instance currently being tried, so no request can reach anywhere else.
 fetch() {
   local url=$1
   case $url in
@@ -83,13 +83,52 @@ get_json() {
   printf '%s' "$out"
 }
 
-height=$(fetch "$MEMPOOL/api/blocks/tip/height") || fail
-# Matched exactly, and never handed to bash arithmetic: inside $(( )) bash
-# would evaluate the contents of the value a second time.
-[[ $height =~ ^[0-9]{1,12}$ ]] || fail
+# Each name is matched against the closed set before any URL is built from it, so
+# no host, port, path or scheme can be smuggled in from configuration. An unknown
+# name is skipped rather than failing the run: one typo in a list of fallbacks
+# should not cost the widget every instance it has. A list with nothing valid
+# left is a malformed request, and fails outright.
+#
+# The tip height is the reachability probe. The first instance to answer it
+# supplies the rest of the document, and no instance is asked twice.
+MEMPOOL=
+winner=
+fees=null
+prices=null
+seen=" "
+valid=0
+for provider in "${requested[@]}"; do
+  provider=${provider//[[:space:]]/}
+  case " $PROVIDERS " in
+  *" $provider "*) ;;
+  *) continue ;;
+  esac
+  valid=1
+  case $seen in
+  *" $provider "*) continue ;;
+  esac
+  seen="$seen$provider "
+  # Out of time: better a fast, honest failure than a process the caller has to
+  # kill after it has already given up waiting for the answer. Nothing has
+  # answered yet, or this loop would already have broken out.
+  [ "$SECONDS" -lt "$DEADLINE" ] || break
 
-fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
-prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
+  MEMPOOL="https://$provider"
+  height=$(fetch "$MEMPOOL/api/blocks/tip/height") || continue
+  # Matched exactly, and never handed to bash arithmetic: inside $(( )) bash
+  # would evaluate the contents of the value a second time.
+  [[ $height =~ ^[0-9]{1,12}$ ]] || continue
+
+  fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
+  prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
+  winner=$provider
+  break
+done
+
+[ "$valid" = 1 ] || fail
+# Set only once an instance has actually answered, so it can never be read as
+# success by a run that was still waiting for its first reply when time ran out.
+[ -n "$winner" ] || fail
 
 # Kraken is the fallback price feed the BTClock firmware itself uses. USD only.
 if [ "$prices" = null ]; then
@@ -109,6 +148,7 @@ fi
   --argjson height "$height" \
   --argjson fees "$fees" \
   --argjson prices "$prices" \
+  --arg provider "$winner" \
   '
   def fee($v):
     if ($v | type) == "number" and $v >= 0 and $v <= 100000
@@ -133,6 +173,7 @@ fi
       low:  fee($fees.economyFee),
       med:  fee($fees.halfHourFee),
       high: fee($fees.fastestFee),
+      provider: $provider,
       ok:   (($p | length) > 0)
     }
   ' || fail

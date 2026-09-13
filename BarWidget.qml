@@ -13,6 +13,9 @@ BarWidget {
   // clamped or matched against a closed set before it is used.
   readonly property int rotateSeconds: Math.min(3600, Math.max(2, parseInt(setting("rotateSeconds", 21), 10) || 21))
   readonly property int refreshSeconds: Math.min(3600, Math.max(15, parseInt(setting("refreshSeconds", 60), 10) || 60))
+  // Only used while nothing can be reached: a dead instance is worth retrying
+  // sooner than the full refresh interval.
+  readonly property int retrySeconds: Math.min(600, Math.max(5, parseInt(setting("retrySeconds", 5), 10) || 5))
   // BTClock rev A/B drives seven e-paper panels, one character each.
   readonly property int cells: Math.max(3, Math.min(12, parseInt(setting("cells", 7), 10) || 7))
   readonly property bool lightMode: String(setting("mode", "dark")).toLowerCase() === "light"
@@ -47,12 +50,37 @@ BarWidget {
 
   // Closed set of mempool instances bin/btc-status knows how to read. Keeping
   // the list here as well means a typo lands on the default instance instead of
-  // reaching the helper, which rejects unknown names outright.
+  // reaching the helper, which ignores unknown names for the same reason.
   readonly property var providers: ["mempool.space", "mempool.emzy.de"]
 
-  readonly property string provider: {
+  // The configured preference, not the only instance: every other one is a
+  // fallback, tried when the preference cannot be reached.
+  readonly property string preferred: {
     var p = String(setting("provider", "mempool.space")).toLowerCase()
     return providers.indexOf(p) !== -1 ? p : "mempool.space"
+  }
+
+  // Whoever answered last is asked first, the preference next, then the rest.
+  // The preference stays in the order rather than being dropped, so a widget
+  // running on a fallback moves back the moment the preference answers again;
+  // and a run of failures behind a dead origin costs one connect timeout per
+  // refresh instead of stalling every fetch.
+  readonly property var providerOrder: {
+    var first = [lastGood, preferred]
+    var out = []
+    for (var i = 0; i < first.length; i++) {
+      if (first[i] && providers.indexOf(first[i]) !== -1 && out.indexOf(first[i]) === -1) out.push(first[i])
+    }
+    for (var j = 0; j < providers.length; j++) {
+      if (out.indexOf(providers[j]) === -1) out.push(providers[j])
+    }
+    return out
+  }
+
+  // The one place a provider name is accepted from outside, closed-set matched.
+  function providerId(value) {
+    var p = String(value || "").toLowerCase()
+    return providers.indexOf(p) !== -1 ? p : ""
   }
 
   // ---- state --------------------------------------------------------------
@@ -61,6 +89,13 @@ BarWidget {
 
   property var payload: null
   property bool stale: false
+  // No instance could be reached on the last refresh: the panels say so rather
+  // than showing numbers that may be hours old.
+  property bool unreachable: false
+  // One notification per outage: the first failure announces it, and only a
+  // successful fetch clears the flag.
+  property bool notified: false
+  property string lastGood: ""
   property int manualOffset: 0
   property bool paused: false
   property int frozenFrame: 0
@@ -155,8 +190,15 @@ BarWidget {
 
   // Centre the string across the panels, blanks either side.
   function cellChars() {
-    var s = frameText()
     var n = root.cells
+    // Every instance failed: all seven panels show a dash, which reads as one
+    // state instead of blank panels that look like a rendering fault.
+    if (root.unreachable) {
+      var dashes = []
+      for (var d = 0; d < n; d++) dashes.push("-")
+      return dashes
+    }
+    var s = frameText()
     if (s.length > n) s = s.substring(0, n)
     var left = Math.floor((n - s.length) / 2)
     var out = []
@@ -178,12 +220,15 @@ BarWidget {
   }
 
   function tooltip() {
+    if (root.unreachable) {
+      return plain("Cannot reach " + providerOrder.join(" or ") + "  ·  retrying every " + retrySeconds + "s")
+    }
     if (!payload) return ""
     return plain("Block " + group(payload.height)
       + "  ·  " + symbol + group(Math.round(fiat)) + " " + currency
       + "  ·  " + group(moscowTime()) + " sat/" + symbol
       + "  ·  fees " + payload.low + "/" + payload.med + "/" + payload.high + " sat/vB"
-      + (provider === "mempool.space" ? "" : "  ·  " + provider)
+      + (payload.provider && payload.provider !== "mempool.space" ? "  ·  " + payload.provider : "")
       + (paused ? "  ·  paused" : "")
       + (stale ? "  ·  stale" : ""))
   }
@@ -228,13 +273,33 @@ BarWidget {
       usd: finite(parsed.usd, 0, 1e12) ? parsed.usd : 0,
       low: finite(parsed.low, 0, 100000) ? Math.floor(parsed.low) : 0,
       med: finite(parsed.med, 0, 100000) ? Math.floor(parsed.med) : 0,
-      high: finite(parsed.high, 0, 100000) ? Math.floor(parsed.high) : 0
+      high: finite(parsed.high, 0, 100000) ? Math.floor(parsed.high) : 0,
+      provider: providerId(parsed.provider)
     }
     return true
   }
 
   function refresh() {
     if (!statusProc.running) statusProc.running = true
+  }
+
+  // One notification per outage: a bar widget that quietly shows dashes is
+  // easier to miss than the numbers it stopped showing. The shell's own
+  // notification helper is used, so the message respects Do Not Disturb and is
+  // formatted like everything else on this desktop.
+  function notifyUnreachable() {
+    if (notified) return
+    var base = String(Quickshell.env("OMARCHY_PATH") || "")
+    if (!base) return
+    notified = true
+    // An argv vector through the shell's own runner: nothing here is ever
+    // re-tokenized, even if a future provider name were to contain a space.
+    Util.execArgv([
+      base + "/bin/omarchy-notification-send",
+      "-u", "normal",
+      "--app-name", "BTClock",
+      "BTClock cannot reach a mempool instance",
+      "Tried " + providerOrder.join(", ") + ". Retrying every " + retrySeconds + "s."])
   }
 
   function advance() {
@@ -253,7 +318,10 @@ BarWidget {
     paused = !paused
   }
 
-  visible: payload !== null
+  // Visible for the dashes too: a widget that has nothing to report is worth
+  // seeing, or its absence is indistinguishable from a plugin that is not
+  // installed.
+  visible: payload !== null || unreachable
   implicitWidth: vertical ? barSize : strip.width + Style.spaceReal(6)
   implicitHeight: vertical ? strip.height + Style.spaceReal(6) : barSize
 
@@ -275,10 +343,10 @@ BarWidget {
     id: statusProc
     // Absolute paths only. setsid gives the fetch its own process group and
     // timeout an absolute deadline with KILL escalation, so nothing is left
-    // behind when a request hangs. The provider is the only value passed on,
-    // and the helper matches it against its own closed set.
+    // behind when a request hangs. The instance order is the only value passed
+    // on, and the helper matches each name against its own closed set.
     command: ["/usr/bin/setsid", "-w", "/usr/bin/timeout", "-k", "2", "--", "30",
-              "/usr/bin/bash", root.helper, "--provider", root.provider]
+              "/usr/bin/bash", root.helper, "--providers", root.providerOrder.join(",")]
 
     // SplitParser with an empty marker delivers raw chunks, so the budget is
     // enforced while the data arrives instead of after it is all in memory.
@@ -299,11 +367,21 @@ BarWidget {
       killTimer.stop()
       var raw = root.buf
       root.buf = ""
-      if (code !== 0 || !root.applyPayload(raw)) {
-        // Keep the last good numbers on screen, dimmed, and try again shortly.
-        if (root.payload) root.stale = true
-        retryTimer.restart()
+      if (code === 0 && root.applyPayload(raw)) {
+        // An instance answered: the panels are live again, and the next outage
+        // is news the user has not had yet.
+        root.unreachable = false
+        root.notified = false
+        root.lastGood = providerId(root.payload.provider) || root.lastGood
+        return
       }
+      // The helper only exits non-zero once it has run out of instances to try,
+      // so this is every instance failing at once - or one of them answering
+      // with a document that could not be trusted, which is the same thing as
+      // far as the bar is concerned: no data.
+      root.unreachable = true
+      root.notifyUnreachable()
+      retryTimer.restart()
     }
   }
 
@@ -324,7 +402,7 @@ BarWidget {
 
   Timer {
     id: retryTimer
-    interval: 5000
+    interval: root.retrySeconds * 1000
     repeat: false
     onTriggered: root.refresh()
   }
@@ -341,7 +419,9 @@ BarWidget {
     id: strip
     anchors.centerIn: parent
     spacing: Math.max(1, Math.round(root.barSize * 0.10))
-    opacity: root.stale ? 0.45 : 1
+    // Dimmed while the numbers are stale, and while there are no numbers at
+    // all, so the panels never read as current when they are not.
+    opacity: (root.stale || root.unreachable) ? 0.45 : 1
 
     readonly property real cellHeight: Math.max(10, root.barSize - Style.spaceReal(7))
     readonly property real cellWidth: Math.round(cellHeight * 0.74)
