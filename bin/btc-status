@@ -3,8 +3,9 @@
 # btc-status - print one bounded JSON line describing the Bitcoin network.
 #
 # Writes no files and keeps no state: every invocation fetches, validates and
-# prints to stdout. The two origins are constants, there are no credentials of
-# any kind, and nothing here reads user configuration.
+# prints to stdout. The origins come from a closed set, there are no credentials
+# of any kind, and nothing here reads user configuration: the one option that
+# does arrive from outside, --provider, is matched against that set below.
 
 set -uo pipefail
 export LC_ALL=C
@@ -18,13 +19,43 @@ readonly HEAD=/usr/bin/head
 # into something that still parses.
 readonly MAX=65536
 
-readonly MEMPOOL=https://mempool.space
+# Public mempool instances that serve the same API. mempool.space is the
+# project's own instance and stays the default; the others are listed because
+# some networks cannot reach a given origin at all, so the mirror is the whole
+# difference between a working widget and an invisible one.
+readonly DEFAULT_PROVIDER=mempool.space
+readonly PROVIDERS="mempool.space mempool.emzy.de"
+
 readonly KRAKEN=https://api.kraken.com
 
 fail() {
   printf '{"ok":false}\n'
   exit 1
 }
+
+# The provider is the only argument this script accepts, and it is the only
+# value that ends up inside a URL it has not already seen.
+provider=$DEFAULT_PROVIDER
+while [ $# -gt 0 ]; do
+  case ${1:-} in
+  --provider)
+    [ $# -ge 2 ] || fail
+    provider=$2
+    shift 2
+    ;;
+  *) fail ;;
+  esac
+done
+
+# Matched against the closed set: no host, port, path or scheme can be smuggled
+# in from configuration, because anything outside the list fails before a URL
+# is built from it.
+case " $PROVIDERS " in
+*" $provider "*) ;;
+*) fail ;;
+esac
+
+readonly MEMPOOL="https://$provider"
 
 # Bounded HTTPS GET against a fixed origin. No -L, so a redirect is a failure
 # rather than a fetch from somewhere else.

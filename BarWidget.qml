@@ -45,6 +45,16 @@ BarWidget {
   readonly property bool barTransparent: root.bar ? root.bar.transparent === true : false
   readonly property color barForeground: root.bar ? root.bar.barForeground : Color.foreground
 
+  // Closed set of mempool instances bin/btc-status knows how to read. Keeping
+  // the list here as well means a typo lands on the default instance instead of
+  // reaching the helper, which rejects unknown names outright.
+  readonly property var providers: ["mempool.space", "mempool.emzy.de"]
+
+  readonly property string provider: {
+    var p = String(setting("provider", "mempool.space")).toLowerCase()
+    return providers.indexOf(p) !== -1 ? p : "mempool.space"
+  }
+
   // ---- state --------------------------------------------------------------
   readonly property int frameCount: 4
   readonly property int maxBytes: 65536
@@ -173,6 +183,7 @@ BarWidget {
       + "  ·  " + symbol + group(Math.round(fiat)) + " " + currency
       + "  ·  " + group(moscowTime()) + " sat/" + symbol
       + "  ·  fees " + payload.low + "/" + payload.med + "/" + payload.high + " sat/vB"
+      + (provider === "mempool.space" ? "" : "  ·  " + provider)
       + (paused ? "  ·  paused" : "")
       + (stale ? "  ·  stale" : ""))
   }
@@ -264,9 +275,10 @@ BarWidget {
     id: statusProc
     // Absolute paths only. setsid gives the fetch its own process group and
     // timeout an absolute deadline with KILL escalation, so nothing is left
-    // behind when a request hangs.
+    // behind when a request hangs. The provider is the only value passed on,
+    // and the helper matches it against its own closed set.
     command: ["/usr/bin/setsid", "-w", "/usr/bin/timeout", "-k", "2", "--", "30",
-              "/usr/bin/bash", root.helper]
+              "/usr/bin/bash", root.helper, "--provider", root.provider]
 
     // SplitParser with an empty marker delivers raw chunks, so the budget is
     // enforced while the data arrives instead of after it is all in memory.

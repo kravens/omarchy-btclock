@@ -63,6 +63,7 @@ omarchy bar set kravens.btclock refreshSeconds 60
 omarchy bar set kravens.btclock cells 7
 omarchy bar set kravens.btclock mode dark
 omarchy bar set kravens.btclock currency USD
+omarchy bar set kravens.btclock provider mempool.space
 ```
 
 | Key | Default | Values |
@@ -72,6 +73,7 @@ omarchy bar set kravens.btclock currency USD
 | `cells` | `7` | 3–12 panels |
 | `mode` | `dark` | `dark` (dark panels, light text) or `light` (inverted) |
 | `currency` | `USD` | `USD` `EUR` `GBP` `JPY` `CHF` `CAD` `AUD` |
+| `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` |
 
 Moscow time follows the selected currency — sats per unit of *that* fiat, as on
 the real device — so with `currency EUR` it is sats per euro, not per dollar.
@@ -93,8 +95,9 @@ transparency, and follows a wallpaper or theme change while transparent.
 
 ## Network access
 
-Every request is an unauthenticated HTTPS `GET` to one of two fixed origins.
-There are no credentials anywhere in this plugin, so nothing is ever sent.
+Every request is an unauthenticated HTTPS `GET` to one of a fixed set of
+origins. There are no credentials anywhere in this plugin, so nothing is ever
+sent.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -105,6 +108,27 @@ There are no credentials anywhere in this plugin, so nothing is ever sent.
 
 These are the same sources the [BTClock firmware](https://git.btclock.dev)
 uses in its `dataSource=1` mode. One fetch happens per `refreshSeconds` per monitor.
+
+### Choosing a provider
+
+`mempool.space` is the project's own instance and the default. A community
+mirror of the same API is also offered, because some networks cannot reach one
+origin even though the rest of the internet works — VPN exits and datacentre IP
+ranges are routinely filtered, and the widget then has nothing to draw with:
+
+```bash
+omarchy bar set kravens.btclock provider mempool.emzy.de
+```
+
+| Provider | Instance |
+| --- | --- |
+| `mempool.space` | The upstream project's instance, run by the mempool.space team |
+| `mempool.emzy.de` | A long-standing public mirror of the same API, run by emzy |
+
+Both serve the same three endpoints, so every screen keeps working; only the
+tooltip mentions a non-default provider. The list is a closed set in both
+`bin/btc-status` and the widget: an unknown name falls back to the default
+rather than being turned into a URL.
 
 Requests are made with a fixed HTTPS scheme, no redirect following, a connect
 and total timeout, a response size ceiling, and proxies disabled.
