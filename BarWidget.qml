@@ -37,6 +37,14 @@ BarWidget {
     }
   }
 
+  // ---- the bar's own appearance --------------------------------------------
+  // Double clicking the bar makes it see-through and picks a foreground colour
+  // that stays legible over whatever wallpaper is behind it. Both arrive from the
+  // shell as live bindings, so the panels can follow the bar in and out of
+  // transparency instead of sitting on it as slabs of theme background.
+  readonly property bool barTransparent: root.bar ? root.bar.transparent === true : false
+  readonly property color barForeground: root.bar ? root.bar.barForeground : Color.foreground
+
   // ---- state --------------------------------------------------------------
   readonly property int frameCount: 4
   readonly property int maxBytes: 65536
@@ -110,6 +118,29 @@ BarWidget {
     case 2: return moscowText()
     default: return payload.low + "/" + payload.med + "/" + payload.high
     }
+  }
+
+  // ---- panel colours -------------------------------------------------------
+  // Normally a panel is a little e-paper screen: dark on the theme background in
+  // dark mode, inverted in light mode. While the bar is transparent a panel is an
+  // outline instead, drawn in the bar's own contrast colour at low alpha and with
+  // the character in that same colour - the treatment the rest of the bar gets -
+  // so nothing hangs over the wallpaper in a colour picked for a solid bar.
+  function panelFill() {
+    if (root.barTransparent) return "transparent"
+    return root.lightMode ? Color.foreground : Qt.darker(Color.background, 1.6)
+  }
+
+  function panelBorder() {
+    if (root.barTransparent) return Util.alpha(root.barForeground, 0.4)
+    return root.lightMode
+      ? Qt.darker(Color.foreground, 1.25)
+      : Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.55)
+  }
+
+  function panelInk() {
+    if (root.barTransparent) return root.barForeground
+    return root.lightMode ? Color.background : Color.foreground
   }
 
   // Centre the string across the panels, blanks either side.
@@ -314,22 +345,37 @@ BarWidget {
         width: strip.cellWidth
         height: strip.cellHeight
         radius: Math.max(1, Math.round(strip.cellWidth * 0.12))
-        // Each panel is its own little screen, inverted in light mode.
-        color: root.lightMode ? Color.foreground : Qt.darker(Color.background, 1.6)
+        // Each panel is its own little screen, inverted in light mode, and an
+        // outline while the bar is transparent.
+        color: root.panelFill()
         border.width: 1
-        border.color: root.lightMode
-          ? Qt.darker(Color.foreground, 1.25)
-          : Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.55)
+        border.color: root.panelBorder()
+        // The bar fades in and out of transparency; the panels fade with it,
+        // using the bar's own duration and easing.
+        Behavior on color {
+          enabled: !root.bar || root.bar.foregroundAnimationEnabled
+          ColorAnimation { duration: 420; easing.type: Easing.InOutCubic }
+        }
+
+        Behavior on border.color {
+          enabled: !root.bar || root.bar.foregroundAnimationEnabled
+          ColorAnimation { duration: 420; easing.type: Easing.InOutCubic }
+        }
 
         Text {
           anchors.centerIn: parent
           // Pinned on every Text, literal or not, so the invariant is auditable.
           textFormat: Text.PlainText
           text: root.cellChars()[index] || ""
-          color: root.lightMode ? Color.background : Color.foreground
+          color: root.panelInk()
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Math.max(7, Math.round(strip.cellHeight * 0.74))
           renderType: Text.NativeRendering
+
+          Behavior on color {
+            enabled: !root.bar || root.bar.foregroundAnimationEnabled
+            ColorAnimation { duration: 420; easing.type: Easing.InOutCubic }
+          }
         }
       }
     }
