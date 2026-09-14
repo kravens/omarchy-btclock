@@ -79,6 +79,18 @@ the real device — so with `currency EUR` it is sats per euro, not per dollar.
 Colours come from the active Omarchy theme, so the panels follow whatever theme
 is applied.
 
+## The transparent bar
+
+Double clicking the bar makes it see-through and samples a contrast colour from
+whatever wallpaper ends up behind it. The panels follow: instead of seven slabs
+of theme background hanging over the wallpaper, each one becomes a faint outline
+drawn in that same contrast colour, with the character in it. The change fades
+over the bar's own 420ms transition.
+
+Nothing to configure — the widget reads the bar's state (`bar.transparent`) and
+colour (`bar.barForeground`) directly, so it follows the bar in and out of
+transparency, and follows a wallpaper or theme change while transparent.
+
 ## Network access
 
 Every request is an unauthenticated HTTPS `GET` to one of two fixed origins.
