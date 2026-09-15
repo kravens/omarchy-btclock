@@ -299,7 +299,9 @@ BarWidget {
     // fallback for a host that cannot enumerate peers, so a widget that really
     // is on its own still gets to say so.
     var peers = bar && typeof bar.moduleWidgets === "function" ? bar.moduleWidgets(moduleName) : [root]
-    if (peers[0] !== root) return
+    // An empty list (this widget not yet an active slot item) must not silence
+    // the outage either.
+    if (peers.length && peers[0] !== root) return
     var base = String(Quickshell.env("OMARCHY_PATH") || "")
     if (!base) return
     notified = true
