@@ -95,6 +95,9 @@ BarWidget {
   // One notification per outage: the first failure announces it, and only a
   // successful fetch clears the flag.
   property bool notified: false
+  // Consecutive failed cycles. One blip keeps whatever numbers are on the panels
+  // where they are; the dash state and the toast are for an outage.
+  property int failures: 0
   property string lastGood: ""
   property int manualOffset: 0
   property bool paused: false
@@ -289,6 +292,14 @@ BarWidget {
   // formatted like everything else on this desktop.
   function notifyUnreachable() {
     if (notified) return
+    // A bar surface exists per monitor, so this widget is live once per screen
+    // and every instance sees the same outage: without this, two monitors mean
+    // two identical toasts. Only the first live instance speaks - the same
+    // slot-ordered lookup the base class uses to broadcast, with the same
+    // fallback for a host that cannot enumerate peers, so a widget that really
+    // is on its own still gets to say so.
+    var peers = bar && typeof bar.moduleWidgets === "function" ? bar.moduleWidgets(moduleName) : [root]
+    if (peers[0] !== root) return
     var base = String(Quickshell.env("OMARCHY_PATH") || "")
     if (!base) return
     notified = true
@@ -372,6 +383,7 @@ BarWidget {
         // is news the user has not had yet.
         root.unreachable = false
         root.notified = false
+        root.failures = 0
         root.lastGood = providerId(root.payload.provider) || root.lastGood
         return
       }
@@ -379,8 +391,24 @@ BarWidget {
       // so this is every instance failing at once - or one of them answering
       // with a document that could not be trusted, which is the same thing as
       // far as the bar is concerned: no data.
-      root.unreachable = true
-      root.notifyUnreachable()
+      //
+      // Counted rather than acted on at once: one unanswered cycle is usually a
+      // blip, and replacing the panels with dashes for it throws away an answer
+      // that is well under a refresh old. The second in a row is an outage worth
+      // saying out loud.
+      root.failures += 1
+      if (root.failures >= 2) {
+        root.unreachable = true
+        root.notifyUnreachable()
+      } else if (root.payload) {
+        root.stale = true
+      } else {
+        // Nothing on the panels to keep: the one case where a single failure has
+        // to show the dash state anyway, because a blank widget cannot be told
+        // apart from one that is not installed. It still waits for the retry
+        // before it notifies.
+        root.unreachable = true
+      }
       retryTimer.restart()
     }
   }
