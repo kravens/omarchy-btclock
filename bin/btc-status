@@ -57,9 +57,11 @@ done
 
 IFS=, read -r -a requested <<<"$order"
 
-# Bounded HTTPS GET against a fixed origin. No -L, so a redirect is a failure
-# rather than a fetch from somewhere else. The origin it will accept is the
-# instance currently being tried, so no request can reach anywhere else.
+# Bounded HTTPS GET. The origin is not fixed down here - MEMPOOL is set per loop
+# iteration - so what bounds the request is the closed-set match on the requested
+# providers above: $MEMPOOL can only ever be one of those names. $KRAKEN is a
+# constant. No -L, so a redirect is a failure rather than a fetch from somewhere
+# else, and the proto flag pins the request and any redirect to https.
 fetch() {
   local url=$1
   case $url in
@@ -120,8 +122,12 @@ for provider in "${requested[@]}"; do
   # would evaluate the contents of the value a second time.
   [[ $height =~ ^[0-9]{1,12}$ ]] || continue
 
-  fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
-  prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
+  # The budget covers these too, not only the start of the next instance: an
+  # instance that answers slowly must not be able to spend the whole allowance
+  # and be killed by the caller mid-answer. What is already in hand is printed,
+  # with whatever ran out of time left null.
+  [ "$SECONDS" -lt "$DEADLINE" ] && fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
+  [ "$SECONDS" -lt "$DEADLINE" ] && prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
   winner=$provider
   break
 done
@@ -132,7 +138,9 @@ done
 [ -n "$winner" ] || fail
 
 # Kraken is the fallback price feed the BTClock firmware itself uses. USD only.
-if [ "$prices" = null ]; then
+# The same budget applies: there is no point starting a fallback the caller is
+# about to stop waiting for.
+if [ "$prices" = null ] && [ "$SECONDS" -lt "$DEADLINE" ]; then
   kraken=$(get_json "$KRAKEN/0/public/Ticker?pair=XBTUSD") || kraken=null
   if [ "$kraken" != null ]; then
     prices=$(printf '%s' "$kraken" |
