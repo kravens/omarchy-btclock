@@ -60,18 +60,22 @@ Stepping works while paused, so you can park the widget on one statistic.
 ```bash
 omarchy bar set kravens.btclock rotateSeconds 21
 omarchy bar set kravens.btclock refreshSeconds 60
+omarchy bar set kravens.btclock retrySeconds 5
 omarchy bar set kravens.btclock cells 7
 omarchy bar set kravens.btclock mode dark
 omarchy bar set kravens.btclock currency USD
+omarchy bar set kravens.btclock provider mempool.space
 ```
 
 | Key | Default | Values |
 | --- | --- | --- |
 | `rotateSeconds` | `21` | 2–3600, seconds each screen is shown |
 | `refreshSeconds` | `60` | 15–3600, seconds between fetches |
+| `retrySeconds` | `5` | 5–600, how soon to try again while no instance can be reached |
 | `cells` | `7` | 3–12 panels |
 | `mode` | `dark` | `dark` (dark panels, light text) or `light` (inverted) |
 | `currency` | `USD` | `USD` `EUR` `GBP` `JPY` `CHF` `CAD` `AUD` |
+| `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` — the instance to try first |
 
 Moscow time follows the selected currency — sats per unit of *that* fiat, as on
 the real device — so with `currency EUR` it is sats per euro, not per dollar.
@@ -93,8 +97,9 @@ transparency, and follows a wallpaper or theme change while transparent.
 
 ## Network access
 
-Every request is an unauthenticated HTTPS `GET` to one of two fixed origins.
-There are no credentials anywhere in this plugin, so nothing is ever sent.
+Every request is an unauthenticated HTTPS `GET` to one of a fixed set of
+origins. There are no credentials anywhere in this plugin, so nothing is ever
+sent.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -103,8 +108,47 @@ There are no credentials anywhere in this plugin, so nothing is ever sent.
 | `https://mempool.space/api/v1/prices` | Prices in all seven currencies |
 | `https://api.kraken.com/0/public/Ticker?pair=XBTUSD` | USD price, only if the mempool.space price call fails |
 
+The mirror serves the same three paths on its own host; whichever instance
+answers, the requests are identical.
+
 These are the same sources the [BTClock firmware](https://git.btclock.dev)
 uses in its `dataSource=1` mode. One fetch happens per `refreshSeconds` per monitor.
+
+### Instances and failover
+
+`mempool.space` is the project's own instance and the one tried first by
+default. A community mirror of the same API is also offered, because some
+networks cannot reach one origin even though the rest of the internet works —
+VPN exits and datacentre IP ranges are routinely filtered:
+
+```bash
+omarchy bar set kravens.btclock provider mempool.emzy.de
+```
+
+| Provider | Instance |
+| --- | --- |
+| `mempool.space` | The upstream project's instance, run by the mempool.space team |
+| `mempool.emzy.de` | A long-standing public mirror of the same API, run by emzy |
+
+That setting chooses which instance is asked first; it is not the only one used.
+Every refresh walks the list — whoever answered last, then your preference, then
+the rest — and the first instance to answer the tip height supplies all four
+screens. A refused connection, a timeout or a body that does not parse simply
+moves on to the next instance, so one filtered origin costs a few seconds and
+never the widget:
+
+```
+preferred origin unreachable           ->  the mirror answers, panels keep working
+every origin unreachable               ->  seven dimmed "-" panels, and one
+                                           notification per outage naming what
+                                           was tried
+```
+
+The tooltip names the instance that answered whenever it is not `mempool.space`,
+and says which instances are being tried while there are no numbers to show.
+
+The list is a closed set in both `bin/btc-status` and the widget: an unknown name
+falls back to the default rather than being turned into a URL.
 
 Requests are made with a fixed HTTPS scheme, no redirect following, a connect
 and total timeout, a response size ceiling, and proxies disabled.
@@ -137,11 +181,18 @@ without the shell:
 
 ```bash
 bash bin/btc-status | jq .
+bash bin/btc-status --providers mempool.emzy.de,mempool.space | jq .
 ```
 
-It prints `{"ok":false}` and exits non-zero when the network is unavailable.
-When a fetch fails while the widget is running, the last good numbers stay on
-screen dimmed rather than the widget going blank.
+`--providers` takes a comma-separated list, tried in order, and each name is
+matched against the same closed set as the widget uses. With no argument every
+instance is tried, in preference order — the same list the widget sends — so the
+script on its own fails over exactly like the widget does.
+
+It prints `{"ok":false}` and exits non-zero only once every instance it was given
+has failed. While the widget is running that leaves the seven panels showing a
+dimmed dash and raises one notification per outage; a partial document from an
+instance that did answer keeps the last good numbers on screen, dimmed, instead.
 
 ## Credits
 
