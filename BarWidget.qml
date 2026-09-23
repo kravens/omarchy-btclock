@@ -259,12 +259,6 @@ BarWidget {
     return out
   }
 
-  // Grouped when it fits, bare digits when it does not.
-  function grouped(prefix, n) {
-    var full = prefix + group(n)
-    return fits(full) ? full : prefix + n
-  }
-
   readonly property var moneyUnits: [["T", 1e12], ["B", 1e9], ["M", 1e6], ["k", 1e3]]
   readonly property var siUnits: [["P", 1e15], ["T", 1e12], ["G", 1e9], ["M", 1e6], ["K", 1e3]]
 
@@ -347,7 +341,9 @@ BarWidget {
     case "moscow": return moscowText()
     case "fees": return payload.low + "/" + payload.med + "/" + payload.high
     case "nextfee": return "󰊘" + feeRate(payload.next)
-    case "halving": return grouped("󰚭", blocksToHalving())
+    case "halving":
+      var g = "󰚭" + group(blocksToHalving())
+      return fits(g) ? g : "󰚭" + blocksToHalving()
     case "mcap": return compact(symbol, supplyAt(payload.height) * fiat, moneyUnits)
     case "supply": return compact("₿", supplyAt(payload.height), [["M", 1e6]])
     case "bitaxeHash": return hashText("󰢷")
@@ -964,7 +960,6 @@ BarWidget {
     property color foreground
     property string fontFamily: ""
     property var options: []
-    property var labels: null
     property var current
     signal chose(var value)
     width: parent ? parent.width : implicitWidth
@@ -974,7 +969,7 @@ BarWidget {
       model: choices.options
       Button {
         required property var modelData
-        text: choices.labels ? choices.labels[modelData] : String(modelData)
+        text: String(modelData)
         foreground: choices.foreground
         fontFamily: choices.fontFamily
         fontSize: Style.font.caption
@@ -1245,10 +1240,9 @@ BarWidget {
           foreground: root.ink
           fontFamily: root.panelFont
             width: implicitWidth
-            options: ["dark", "light"]
-            labels: ({ dark: "Dark", light: "Light" })
-            current: root.lightMode ? "light" : "dark"
-            onChose: function (value) { root.save("mode", value) }
+            options: ["Dark", "Light"]
+            current: root.lightMode ? "Light" : "Dark"
+            onChose: function (value) { root.save("mode", value.toLowerCase()) }
           }
           Item { width: Style.space(12); height: 1 }
           Button {

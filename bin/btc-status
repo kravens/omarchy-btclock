@@ -77,19 +77,15 @@ IFS=, read -r -a requested <<<"$order"
 # else, and the proto flag pins the request and any redirect to https - except
 # the one fixed Bitaxe URL, which is http because that is all AxeOS speaks.
 fetch() {
-  local url=$1 proto='=https' connect=5
+  local url=$1 proto='=https'
   case $url in
   "$MEMPOOL"/* | "$KRAKEN"/*) ;;
-  "$BITAXE/api/system/info")
-    [ -n "$BITAXE" ] || return 1
-    proto='=http'
-    connect=3
-    ;;
+  "$BITAXE/api/system/info") proto='=http' ;;
   *) return 1 ;;
   esac
   "$CURL" -q -sS --fail \
     --proto "$proto" --proto-redir "$proto" \
-    --connect-timeout "$connect" --max-time 10 \
+    --connect-timeout 5 --max-time 10 \
     --max-filesize "$MAX" --noproxy '*' \
     -- "$url" |
     "$HEAD" -c $((MAX + 1))
@@ -152,7 +148,6 @@ for provider in "${requested[@]}"; do
   [ "$SECONDS" -lt "$DEADLINE" ] && projected=$(get_json "$MEMPOOL/api/v1/fees/mempool-blocks") || projected=null
   # The tip block's own details, for the new-block notification. The hash is
   # matched exactly before it becomes part of a path.
-  block=null
   if [ "$SECONDS" -lt "$DEADLINE" ] && hash=$(fetch "$MEMPOOL/api/blocks/tip/hash") &&
     [[ $hash =~ ^[0-9a-f]{64}$ ]] && [ "$SECONDS" -lt "$DEADLINE" ]; then
     block=$(get_json "$MEMPOOL/api/v1/block/$hash") || block=null
