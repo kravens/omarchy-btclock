@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "id": "kravens.btclock",
   "name": "BTClock",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "kravens",
-  "description": "Bitcoin block height, fiat price, Moscow time and mempool fee rates on a row of BTClock-style panels",
+  "description": "Bitcoin block height, price, Moscow time, fees, halving, market cap, supply and Bitaxe stats on a row of BTClock-style panels",
   "homepage": "https://github.com/kravens/omarchy-btclock",
   "license": "MIT",
   "kinds": ["bar-widget"],
   "entryPoints": { "barWidget": "BarWidget.qml" },
   "barWidget": {
     "displayName": "BTClock",
-    "description": "Rotates block height, fiat price, sats per fiat and low/med/high fee rates across little e-paper panels",
+    "description": "Rotates your choice of Bitcoin screens across little e-paper panels, reacts to new blocks, and opens a settings panel on left click",
     "category": "Bitcoin",
     "allowMultiple": false,
     "defaultSection": "center",
@@ -22,7 +22,12 @@
       "cells": 7,
       "mode": "dark",
       "currency": "USD",
-      "provider": "mempool.space"
+      "provider": "mempool.space",
+      "screens": "height price moscow fees",
+      "stealFocus": true,
+      "blockFlash": true,
+      "blockNotify": false,
+      "bitaxeHost": ""
     },
     "schema": [
       { "key": "rotateSeconds", "type": "int", "label": "Seconds per screen" },
@@ -31,7 +36,12 @@
       { "key": "cells", "type": "int", "label": "Number of panels" },
       { "key": "mode", "type": "string", "label": "Panel mode (dark or light)" },
       { "key": "currency", "type": "string", "label": "Fiat currency (USD, EUR, GBP, JPY, CHF, CAD, AUD)" },
-      { "key": "provider", "type": "string", "label": "Mempool API instance to try first (mempool.space, mempool.emzy.de)" }
+      { "key": "provider", "type": "string", "label": "Mempool API instance to try first (mempool.space, mempool.emzy.de)" },
+      { "key": "screens", "type": "string", "label": "Screens in rotation order, space-separated (height price moscow fees nextfee halving mcap supply bitaxeHash bitaxeBest)" },
+      { "key": "stealFocus", "type": "boolean", "label": "Jump to the block height when a new block arrives" },
+      { "key": "blockFlash", "type": "boolean", "label": "Flash the panels when a new block arrives" },
+      { "key": "blockNotify", "type": "boolean", "label": "Send a notification when a new block arrives" },
+      { "key": "bitaxeHost", "type": "string", "label": "Bitaxe address on the local network (host name or IP, optional :port)" }
     ]
   }
 }
