@@ -153,7 +153,26 @@ BarWidget {
   // Closed set of mempool instances bin/btc-status knows how to read. Keeping
   // the list here as well means a typo lands on the default instance instead of
   // reaching the helper, which ignores unknown names for the same reason.
-  readonly property var providers: ["mempool.space", "mempool.emzy.de"]
+  //
+  // A self-hosted instance joins the set as "custom" once its origin is set.
+  readonly property var providers: customMempool
+    ? ["custom", "mempool.space", "mempool.emzy.de"]
+    : ["mempool.space", "mempool.emzy.de"]
+
+  // Your own mempool instance: an http(s) origin, host or IP with an optional
+  // port and nothing after it. bin/btc-status applies the same pattern again.
+  function validOrigin(u) {
+    return /^https?:\/\/[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?\/?$/.test(u)
+  }
+  readonly property string customMempool: {
+    var u = String(opt("customMempool", "")).trim()
+    return validOrigin(u) ? u.replace(/\/$/, "") : ""
+  }
+
+  // How a provider reads in the panel, tooltip and notifications.
+  function providerName(p) {
+    return p === "custom" ? customMempool.replace(/^https?:\/\//, "") : p
+  }
 
   // The configured preference, not the only instance: every other one is a
   // fallback, tried when the preference cannot be reached.
@@ -162,17 +181,12 @@ BarWidget {
     return providers.indexOf(p) !== -1 ? p : "mempool.space"
   }
 
-  // Whoever answered last is asked first, the preference next, then the rest.
-  // The preference stays in the order rather than being dropped, so a widget
-  // running on a fallback moves back the moment the preference answers again;
-  // and a run of failures behind a dead origin costs one connect timeout per
-  // refresh instead of stalling every fetch.
+  // The preference first, then the rest. Asked first every time, so a widget
+  // running on a fallback moves back the moment the preference answers again -
+  // which matters most for your own node - at the cost of one connect timeout
+  // per refresh while the preference is down.
   readonly property var providerOrder: {
-    var first = [lastGood, preferred]
-    var out = []
-    for (var i = 0; i < first.length; i++) {
-      if (first[i] && providers.indexOf(first[i]) !== -1 && out.indexOf(first[i]) === -1) out.push(first[i])
-    }
+    var out = [preferred]
     for (var j = 0; j < providers.length; j++) {
       if (out.indexOf(providers[j]) === -1) out.push(providers[j])
     }
@@ -199,7 +213,6 @@ BarWidget {
   // Consecutive failed cycles. One blip keeps whatever numbers are on the panels
   // where they are; the dash state and the toast are for an outage.
   property int failures: 0
-  property string lastGood: ""
   property int manualOffset: 0
   property bool paused: false
   // Paused on a screen by id, not by position, so enabling or reordering
@@ -441,9 +454,9 @@ BarWidget {
   }
 
   function statusLine() {
-    if (root.unreachable) return "Cannot reach " + providerOrder.join(" or ") + ", retrying every " + retrySeconds + "s"
+    if (root.unreachable) return "Cannot reach " + providerOrder.map(function (p) { return providerName(p) }).join(" or ") + ", retrying every " + retrySeconds + "s"
     if (!payload) return "Loading"
-    return (payload.provider ? "via " + payload.provider : "")
+    return (payload.provider ? "via " + providerName(payload.provider) : "")
       + (paused ? "  ·  paused" : "")
       + (stale ? "  ·  stale" : "")
   }
@@ -454,7 +467,7 @@ BarWidget {
     var parts = []
     for (var i = 0; i < activeScreens.length; i++) parts.push(screenLong(activeScreens[i]))
     return plain(parts.join("  ·  ")
-      + (payload.provider && payload.provider !== "mempool.space" ? "  ·  " + payload.provider : "")
+      + (payload.provider && payload.provider !== "mempool.space" ? "  ·  " + providerName(payload.provider) : "")
       + (paused ? "  ·  paused" : "")
       + (stale ? "  ·  stale" : ""))
   }
@@ -564,7 +577,7 @@ BarWidget {
     if (notified || !speaksForPeers()) return
     notified = true
     notify("BTClock cannot reach a mempool instance",
-           "Tried " + providerOrder.join(", ") + ". Retrying every " + retrySeconds + "s.")
+           "Tried " + providerOrder.map(function (p) { return providerName(p) }).join(", ") + ". Retrying every " + retrySeconds + "s.")
   }
 
   // The firmware's new-block moment. A jump of more than 100 blocks is the
@@ -746,6 +759,7 @@ BarWidget {
     command: ["/usr/bin/setsid", "-w", "/usr/bin/timeout", "-k", "2", "--", "30",
               "/usr/bin/bash", root.helper, "--providers", root.providerOrder.join(",")]
              .concat(root.wantsBitaxe ? ["--bitaxe", root.bitaxeHost] : [])
+             .concat(root.customMempool ? ["--custom", root.customMempool] : [])
 
     // SplitParser with an empty marker delivers raw chunks, so the budget is
     // enforced while the data arrives instead of after it is all in memory.
@@ -776,7 +790,6 @@ BarWidget {
         root.unreachable = false
         root.notified = false
         root.failures = 0
-        root.lastGood = providerId(root.payload.provider) || root.lastGood
         root.checkNewBlock()
         return
       }
@@ -1277,9 +1290,41 @@ BarWidget {
         Choices {
           foreground: root.ink
           fontFamily: root.panelFont
-          options: root.providers
-          current: root.preferred
-          onChose: function (value) { root.save("provider", value) }
+          options: root.providers.map(function (p) { return root.providerName(p) })
+          current: root.providerName(root.preferred)
+          onChose: function (value) { root.save("provider", root.providers[options.indexOf(value)]) }
+        }
+        TextField {
+          id: mempoolField
+          width: parent.width
+          foreground: root.ink
+          font.family: root.panelFont
+          font.pixelSize: Style.font.body
+          placeholderText: "Your own: http://umbrel.local:3006"
+          text: root.customMempool
+          readonly property bool acceptable: text.trim() === "" || root.validOrigin(text.trim())
+          color: acceptable ? root.ink : Color.urgent
+          // Setting an instance makes it the one tried first; clearing it hands
+          // that back to mempool.space.
+          onEditingFinished: {
+            var u = text.trim().replace(/\/$/, "")
+            if (!acceptable || u === root.customMempool) return
+            root.save("customMempool", u)
+            if (u) root.save("provider", "custom")
+            else if (root.preferred === "custom") root.save("provider", "mempool.space")
+          }
+        }
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          color: root.dim
+          font.family: root.panelFont
+          font.pixelSize: Style.font.caption
+          text: !mempoolField.acceptable ? "An address like http://192.168.1.10:4080 - scheme, host and port, no path."
+            : !root.customMempool ? "Run your own mempool? Its address here, and it is asked first."
+            : root.payload && root.payload.provider === "custom" ? "Answering from your instance."
+            : "Your instance is not answering; the public ones stand in until it does."
         }
 
         // ---------- Bitaxe ----------

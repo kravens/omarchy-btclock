@@ -9,7 +9,8 @@
 # Instances are tried in the order given, so a network that cannot reach one of
 # them still gets a working widget from the next. --bitaxe names a miner on the
 # local network; it is validated as a bare host[:port] and only ever asked for
-# one fixed path.
+# one fixed path. --custom names a self-hosted mempool instance as a bare
+# http(s)://host[:port] origin, and is then offered as the provider "custom".
 
 set -uo pipefail
 export LC_ALL=C
@@ -38,6 +39,9 @@ readonly KRAKEN=https://api.kraken.com
 
 # Set only from a validated --bitaxe value. AxeOS serves plain HTTP on the LAN.
 BITAXE=
+# Set only from a validated --custom value: a self-hosted instance, often plain
+# HTTP on the LAN.
+CUSTOM=
 
 fail() {
   printf '{"ok":false}\n'
@@ -64,6 +68,14 @@ while [ $# -gt 0 ]; do
     BITAXE="http://$2"
     shift 2
     ;;
+  --custom)
+    [ $# -ge 2 ] || fail
+    # An origin and nothing else: scheme, host or IPv4 address, optional port.
+    # No userinfo and no path, so only the fixed API paths below can follow it.
+    [[ $2 =~ ^https?://[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?/?$ ]] || fail
+    CUSTOM=${2%/}
+    shift 2
+    ;;
   *) fail ;;
   esac
 done
@@ -75,11 +87,13 @@ IFS=, read -r -a requested <<<"$order"
 # providers above: $MEMPOOL can only ever be one of those names. $KRAKEN is a
 # constant. No -L, so a redirect is a failure rather than a fetch from somewhere
 # else, and the proto flag pins the request and any redirect to https - except
-# the one fixed Bitaxe URL, which is http because that is all AxeOS speaks.
+# the one fixed Bitaxe URL, which is http because that is all AxeOS speaks, and a
+# custom instance, pinned to whichever scheme its validated origin names.
 fetch() {
   local url=$1 proto='=https'
   case $url in
-  "$MEMPOOL"/* | "$KRAKEN"/*) ;;
+  "$MEMPOOL"/*) proto="=${MEMPOOL%%://*}" ;;
+  "$KRAKEN"/*) ;;
   "$BITAXE/api/system/info") proto='=http' ;;
   *) return 1 ;;
   esac
@@ -120,8 +134,11 @@ valid=0
 for provider in "${requested[@]}"; do
   provider=${provider//[[:space:]]/}
   case " $PROVIDERS " in
-  *" $provider "*) ;;
-  *) continue ;;
+  *" $provider "*) MEMPOOL="https://$provider" ;;
+  *)
+    [ "$provider" = custom ] && [ -n "$CUSTOM" ] || continue
+    MEMPOOL=$CUSTOM
+    ;;
   esac
   valid=1
   case $seen in
@@ -133,7 +150,6 @@ for provider in "${requested[@]}"; do
   # answered yet, or this loop would already have broken out.
   [ "$SECONDS" -lt "$DEADLINE" ] || break
 
-  MEMPOOL="https://$provider"
   height=$(fetch "$MEMPOOL/api/blocks/tip/height") || continue
   # Matched exactly, and never handed to bash arithmetic: inside $(( )) bash
   # would evaluate the contents of the value a second time.
@@ -143,14 +159,21 @@ for provider in "${requested[@]}"; do
   # instance that answers slowly must not be able to spend the whole allowance
   # and be killed by the caller mid-answer. What is already in hand is printed,
   # with whatever ran out of time left null.
-  [ "$SECONDS" -lt "$DEADLINE" ] && fees=$(get_json "$MEMPOOL/api/v1/fees/recommended") || fees=null
-  [ "$SECONDS" -lt "$DEADLINE" ] && prices=$(get_json "$MEMPOOL/api/v1/prices") || prices=null
-  [ "$SECONDS" -lt "$DEADLINE" ] && projected=$(get_json "$MEMPOOL/api/v1/fees/mempool-blocks") || projected=null
+  #
+  # Some self-hosted setups proxy /api/ straight to the backend's /api/v1/, so
+  # when the versioned path is missing the unversioned one is the same endpoint.
+  api="$MEMPOOL/api/v1"
+  if [ "$SECONDS" -lt "$DEADLINE" ]; then
+    fees=$(get_json "$api/fees/recommended") ||
+      { api="$MEMPOOL/api" && fees=$(get_json "$api/fees/recommended"); } || fees=null
+  fi
+  [ "$SECONDS" -lt "$DEADLINE" ] && prices=$(get_json "$api/prices") || prices=null
+  [ "$SECONDS" -lt "$DEADLINE" ] && projected=$(get_json "$api/fees/mempool-blocks") || projected=null
   # The tip block's own details, for the new-block notification. The hash is
   # matched exactly before it becomes part of a path.
   if [ "$SECONDS" -lt "$DEADLINE" ] && hash=$(fetch "$MEMPOOL/api/blocks/tip/hash") &&
     [[ $hash =~ ^[0-9a-f]{64}$ ]] && [ "$SECONDS" -lt "$DEADLINE" ]; then
-    block=$(get_json "$MEMPOOL/api/v1/block/$hash") || block=null
+    block=$(get_json "$api/block/$hash") || block=null
   fi
   winner=$provider
   break

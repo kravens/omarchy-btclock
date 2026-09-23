@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "kravens.btclock",
   "name": "BTClock",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "kravens",
   "description": "Bitcoin block height, price, Moscow time, fees, halving, market cap, supply and Bitaxe stats on a row of BTClock-style panels",
   "homepage": "https://github.com/kravens/omarchy-btclock",
@@ -27,7 +27,8 @@
       "stealFocus": true,
       "blockFlash": true,
       "blockNotify": false,
-      "bitaxeHost": ""
+      "bitaxeHost": "",
+      "customMempool": ""
     },
     "schema": [
       { "key": "rotateSeconds", "type": "int", "label": "Seconds per screen" },
@@ -36,12 +37,13 @@
       { "key": "cells", "type": "int", "label": "Number of panels" },
       { "key": "mode", "type": "string", "label": "Panel mode (dark or light)" },
       { "key": "currency", "type": "string", "label": "Fiat currency (USD, EUR, GBP, JPY, CHF, CAD, AUD)" },
-      { "key": "provider", "type": "string", "label": "Mempool API instance to try first (mempool.space, mempool.emzy.de)" },
+      { "key": "provider", "type": "string", "label": "Mempool API instance to try first (mempool.space, mempool.emzy.de, custom)" },
       { "key": "screens", "type": "string", "label": "Screens in rotation order, space-separated (height price moscow fees nextfee halving mcap supply bitaxeHash bitaxeBest)" },
       { "key": "stealFocus", "type": "boolean", "label": "Jump to the block height when a new block arrives" },
       { "key": "blockFlash", "type": "boolean", "label": "Flash the panels when a new block arrives" },
       { "key": "blockNotify", "type": "boolean", "label": "Send a notification when a new block arrives" },
-      { "key": "bitaxeHost", "type": "string", "label": "Bitaxe address on the local network (host name or IP, optional :port)" }
+      { "key": "bitaxeHost", "type": "string", "label": "Bitaxe address on the local network (host name or IP, optional :port)" },
+      { "key": "customMempool", "type": "string", "label": "Your own mempool instance, as http(s)://host[:port]" }
     ]
   }
 }
