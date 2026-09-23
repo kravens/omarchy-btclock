@@ -11,11 +11,11 @@ Firmware source lives at [git.btclock.dev](https://git.btclock.dev).
 
 ![preview](preview.png)
 
-And the same widget actually running, an unretouched 200x50 crop of a real bar
-at 1:1 with a sliver of wallpaper below it, so you can judge the size before
+And the same widget actually running so you can judge the size before
 installing:
 
-![screenshot](screenshot.png)
+<img width="897" height="1280" alt="image" src="https://github.com/user-attachments/assets/fbead79a-6de8-487f-854b-84c27d2c1d76" />
+
 
 Panel colours come from the active Omarchy theme — this one is a custom theme,
 so yours will match whatever you have applied.
