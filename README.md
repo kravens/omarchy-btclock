@@ -112,6 +112,7 @@ omarchy bar set kravens.btclock cells 7
 omarchy bar set kravens.btclock mode dark
 omarchy bar set kravens.btclock currency USD
 omarchy bar set kravens.btclock provider mempool.space
+omarchy bar set kravens.btclock customMempool http://umbrel.local:3006
 omarchy bar set kravens.btclock screens "height price moscow fees halving"
 omarchy bar set kravens.btclock stealFocus true --json
 omarchy bar set kravens.btclock blockFlash true --json
@@ -127,7 +128,8 @@ omarchy bar set kravens.btclock bitaxeHost 192.168.1.40
 | `cells` | `7` | 3–12 panels |
 | `mode` | `dark` | `dark` (dark panels, light text) or `light` (inverted) |
 | `currency` | `USD` | `USD` `EUR` `GBP` `JPY` `CHF` `CAD` `AUD` |
-| `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` — the instance to try first |
+| `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` `custom` — the instance to try first |
+| `customMempool` | *(empty)* | Your own mempool instance: `http(s)://host[:port]`, no path |
 | `screens` | `height price moscow fees` | Screen ids from the table above, space-separated, in rotation order |
 | `stealFocus` | `true` | Jump to the block height when a block is found |
 | `blockFlash` | `true` | Flash the panels when a block is found |
@@ -202,6 +204,7 @@ sent.
 | `https://mempool.space/api/v1/fees/mempool-blocks` | Next block's median fee |
 | `https://mempool.space/api/blocks/tip/hash` and `/api/v1/block/<hash>` | Pool, transaction count and median fee of the newest block |
 | `https://api.kraken.com/0/public/Ticker?pair=XBTUSD` | USD price, only if the mempool.space price call fails |
+| `<customMempool>/api/v1/…` or `/api/…` | The same mempool calls, against your own instance when one is set |
 | `http://<bitaxeHost>/api/system/info` | Your Bitaxe's stats, only when configured and a Bitaxe screen is on |
 
 The mirror serves the same mempool paths on its own host; whichever instance
@@ -227,8 +230,8 @@ omarchy bar set kravens.btclock provider mempool.emzy.de
 | `mempool.emzy.de` | A long-standing public mirror of the same API, run by emzy |
 
 That setting chooses which instance is asked first; it is not the only one used.
-Every refresh walks the list — whoever answered last, then your preference, then
-the rest — and the first instance to answer the tip height supplies all four
+Every refresh walks the list — your preference, then the rest — and the first
+instance to answer the tip height supplies all four
 screens. A refused connection, a timeout or a body that does not parse simply
 moves on to the next instance, so one filtered origin costs a few seconds and
 never the widget:
@@ -248,6 +251,25 @@ falls back to the default rather than being turned into a URL.
 
 Requests are made with a fixed HTTPS scheme, no redirect following, a connect
 and total timeout, a response size ceiling, and proxies disabled.
+
+### Your own instance
+
+Running mempool yourself - on Umbrel, Start9, RaspiBlitz, a Docker host? Type its
+address under *Mempool instance* in the settings panel, or:
+
+```bash
+omarchy bar set kravens.btclock customMempool http://192.168.1.10:4080
+omarchy bar set kravens.btclock provider custom
+```
+
+It joins the list as `custom` and, once set from the panel, becomes the instance
+asked first. The address is an origin only - `http` or `https`, a host name or IP,
+an optional port, nothing after it - checked in the widget and again in the
+helper, and requests to it are pinned to the scheme you typed. Setups that proxy
+`/api/` straight to the backend's `/api/v1/` are detected and handled.
+
+The public instances stay behind it as fallbacks, so the widget keeps working
+while your node is down, and moves back to it on the first refresh it answers.
 
 ## Files and state
 
