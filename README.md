@@ -20,18 +20,31 @@ installing:
 Panel colours come from the active Omarchy theme — this one is a custom theme,
 so yours will match whatever you have applied.
 
-Four screens rotate in a single bar slot:
+Ten screens, the same set the device offers, rotate in a single bar slot. You
+pick which ones and in what order; the first four are on by default:
 
-| Screen | Example | What it is |
-| --- | --- | --- |
-| Block height | `₿966251` | Current tip height |
-| Fiat price | `$78 730` | Price of 1 BTC in the selected currency |
-| Moscow time | `1 270/$` | Sats per unit of that currency (100,000,000 ÷ price) |
-| Fee rates | `1/1/3` | Economy / half-hour / fastest, in sat/vB |
+| Screen | Id | Example | What it is |
+| --- | --- | --- | --- |
+| Block height | `height` | `₿966251` | Current tip height |
+| Price | `price` | `$78 730` | Price of 1 BTC in the selected currency |
+| Moscow time | `moscow` | `1 270/$` | Sats per unit of that currency (100,000,000 ÷ price) |
+| Fee rates | `fees` | `1/1/3` | Economy / half-hour / fastest, in sat/vB |
+| Next block fee | `nextfee` | `󰊘3.52` | Median fee rate of the next projected block |
+| Halving countdown | `halving` | `󰚭81 684` | Blocks until the next halving |
+| Market cap | `mcap` | `€1.49T` | Supply × price |
+| Supply | `supply` | `₿20.09M` | Coins issued so far, worked out from the height |
+| Bitaxe hashrate | `bitaxeHash` | `󰢷882.7G` | Your Bitaxe's hashrate, in H/s |
+| Bitaxe best difficulty | `bitaxeBest` | `󰑣19.28G` | Its best share difficulty |
 
-Strings shorter than the panel count are centred with blank panels, and a price
+Strings shorter than the panel count are centred with blank panels, and a value
 too wide to spell out falls back to a compact suffix (`¥12.1M`), which is what
-the device does in its `suffixPrice` mode.
+the device does in its `suffixPrice` mode. The icons are the Material Design
+glyphs the firmware itself uses, which every Omarchy Nerd Font carries. Halving,
+market cap and supply are computed from data already fetched, so they cost no
+extra requests.
+
+A screen with nothing to show - a Bitaxe screen with no miner configured, say -
+is skipped rather than filling the panels with blanks.
 
 ## Install
 
@@ -44,16 +57,50 @@ No accounts, no API keys, no external tools to install: it uses `bash`, `curl`,
 
 ## Controls
 
-The mouse buttons mirror the device's three buttons.
-
 | Action | Effect |
 | --- | --- |
-| Left click | Pause or resume rotation, holding the current screen |
+| Left click | Open the settings panel |
+| Middle click | Pause or resume rotation, holding the current screen |
 | Right click / scroll | Step to the next or previous screen |
-| Middle click | Refresh now |
-| Hover | Tooltip with all four values at once |
+| Hover | Tooltip with every enabled screen at once |
 
 Stepping works while paused, so you can park the widget on one statistic.
+
+## The settings panel
+
+Left click opens a panel in the same style as the shell's own popups:
+
+- **The panels themselves**, drawn large at the top, with the same content as
+  the bar, and Pause and Refresh buttons.
+- **Screens**: every screen with a switch, what it would show right now, and
+  up and down arrows to set the rotation order. The screen on the panels now is
+  marked; click any enabled screen to jump to it.
+- **New block**: the three reactions below, each with its own switch, and a
+  *Try it* button that plays them on the spot.
+- **Currency**, **seconds per screen**, **panel style and count**, and which
+  **mempool instance** to try first.
+- **Bitaxe**: the miner's address, with a live readout once it answers.
+
+Every change is written through `omarchy bar set`, exactly as if you had typed
+it, so the settings below stay the single source of truth and every monitor
+picks the change up.
+
+## When a block is found
+
+The device's best moment, brought to the bar. When the height goes up:
+
+- **Jump to block height** (`stealFocus`, on): the panels switch to the new
+  height for one full screen, then the rotation carries on.
+- **Flash the panels** (`blockFlash`, on): three pulses in the theme's accent
+  colour, the bar's version of the device's orange LED flash.
+- **Notification** (`blockNotify`, off): the height, the pool that mined it, its
+  transaction count and median fee rate.
+
+A jump of more than 100 blocks is the widget catching up after sleep or an
+outage and gets none of this - the same guard the firmware applies. With more
+than one monitor, the widget that sees the block first asks the others to look
+too, so every screen flashes within a second or two, and only one notification
+is sent.
 
 ## Settings
 
@@ -65,6 +112,11 @@ omarchy bar set kravens.btclock cells 7
 omarchy bar set kravens.btclock mode dark
 omarchy bar set kravens.btclock currency USD
 omarchy bar set kravens.btclock provider mempool.space
+omarchy bar set kravens.btclock screens "height price moscow fees halving"
+omarchy bar set kravens.btclock stealFocus true --json
+omarchy bar set kravens.btclock blockFlash true --json
+omarchy bar set kravens.btclock blockNotify false --json
+omarchy bar set kravens.btclock bitaxeHost 192.168.1.40
 ```
 
 | Key | Default | Values |
@@ -76,6 +128,14 @@ omarchy bar set kravens.btclock provider mempool.space
 | `mode` | `dark` | `dark` (dark panels, light text) or `light` (inverted) |
 | `currency` | `USD` | `USD` `EUR` `GBP` `JPY` `CHF` `CAD` `AUD` |
 | `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` — the instance to try first |
+| `screens` | `height price moscow fees` | Screen ids from the table above, space-separated, in rotation order |
+| `stealFocus` | `true` | Jump to the block height when a block is found |
+| `blockFlash` | `true` | Flash the panels when a block is found |
+| `blockNotify` | `false` | Send a notification when a block is found |
+| `bitaxeHost` | *(empty)* | Your Bitaxe on the local network: a host name or IP, optionally `:port` |
+
+`screens` is space-separated because `omarchy bar set` passes values through
+`qs ipc call`, which splits arguments on commas.
 
 Moscow time follows the selected currency — sats per unit of *that* fiat, as on
 the real device — so with `currency EUR` it is sats per euro, not per dollar.
@@ -83,13 +143,46 @@ the real device — so with `currency EUR` it is sats per euro, not per dollar.
 Colours come from the active Omarchy theme, so the panels follow whatever theme
 is applied.
 
+## Bitaxe
+
+Set your miner's address in the settings panel, or with
+`omarchy bar set kravens.btclock bitaxeHost <address>`, and turn on one or both
+Bitaxe screens. The widget then asks the miner's own AxeOS API for its hashrate
+and best difficulty on every refresh, alongside the network data. Both the old
+string (`"4.29G"`) and the newer numeric `bestDiff` are understood.
+
+The address must be a bare host name or IPv4 address with an optional port -
+no scheme, no path, no credentials - and is checked in the widget and again in
+the helper. Only `http://<address>/api/system/info` is ever requested: AxeOS
+does not speak HTTPS, so this is the one plain-HTTP request the plugin makes,
+and it never leaves your network. An unreachable miner blanks only its own
+screens.
+
+If your miner is on a different subnet and you run a VPN, check that the subnet
+is routed outside the tunnel: `ip route get <address>` should name your LAN
+interface, not the VPN's.
+
+## Scripting
+
+```bash
+omarchy-shell kravens.btclock toggle   # open or close the settings panel
+omarchy-shell kravens.btclock refresh  # fetch now, on every monitor
+omarchy-shell kravens.btclock pause    # pause or resume, on every monitor
+omarchy-shell kravens.btclock status   # every enabled screen, as text
+```
+
+`status` prints one line per enabled screen - id, what the panels show, and the
+same value spelled out - with a `*` on the one showing now.
+
 ## The transparent bar
 
 Double clicking the bar makes it see-through and samples a contrast colour from
 whatever wallpaper ends up behind it. The panels follow: instead of seven slabs
 of theme background hanging over the wallpaper, each one becomes a faint outline
-drawn in that same contrast colour, with the character in it. The change fades
-over the bar's own 420ms transition.
+drawn in that same contrast colour, with the character in it. In `light` mode
+the outline is inverted: each panel is filled with the contrast colour and the
+character is drawn in whichever theme colour stands out against it. The change
+fades over the bar's own 420ms transition.
 
 Nothing to configure — the widget reads the bar's state (`bar.transparent`) and
 colour (`bar.barForeground`) directly, so it follows the bar in and out of
@@ -106,9 +199,12 @@ sent.
 | `https://mempool.space/api/blocks/tip/height` | Block height |
 | `https://mempool.space/api/v1/fees/recommended` | Fee rates |
 | `https://mempool.space/api/v1/prices` | Prices in all seven currencies |
+| `https://mempool.space/api/v1/fees/mempool-blocks` | Next block's median fee |
+| `https://mempool.space/api/blocks/tip/hash` and `/api/v1/block/<hash>` | Pool, transaction count and median fee of the newest block |
 | `https://api.kraken.com/0/public/Ticker?pair=XBTUSD` | USD price, only if the mempool.space price call fails |
+| `http://<bitaxeHost>/api/system/info` | Your Bitaxe's stats, only when configured and a Bitaxe screen is on |
 
-The mirror serves the same three paths on its own host; whichever instance
+The mirror serves the same mempool paths on its own host; whichever instance
 answers, the requests are identical.
 
 These are the same sources the [BTClock firmware](https://git.btclock.dev)
@@ -159,7 +255,8 @@ and total timeout, a response size ceiling, and proxies disabled.
 one JSON line to stdout on each run; nothing is cached to disk, and no state
 persists between invocations or across a restart. Settings live where every
 Omarchy widget's settings live, in `~/.config/omarchy/shell.json`, managed by
-`omarchy bar set`.
+`omarchy bar set` - which is also the only way the settings panel changes
+them: it runs that command, and never touches the file itself.
 
 It does not read or modify any Hyprland configuration, any other plugin's
 files, or anything else outside its own directory.
@@ -182,6 +279,7 @@ without the shell:
 ```bash
 bash bin/btc-status | jq .
 bash bin/btc-status --providers mempool.emzy.de,mempool.space | jq .
+bash bin/btc-status --bitaxe 192.168.1.40 | jq .bitaxe
 ```
 
 `--providers` takes a comma-separated list, tried in order, and each name is
