@@ -179,8 +179,10 @@ same value spelled out - with a `*` on the one showing now.
 Double clicking the bar makes it see-through and samples a contrast colour from
 whatever wallpaper ends up behind it. The panels follow: instead of seven slabs
 of theme background hanging over the wallpaper, each one becomes a faint outline
-drawn in that same contrast colour, with the character in it. The change fades
-over the bar's own 420ms transition.
+drawn in that same contrast colour, with the character in it. In `light` mode
+the outline is inverted: each panel is filled with the contrast colour and the
+character is drawn in whichever theme colour stands out against it. The change
+fades over the bar's own 420ms transition.
 
 Nothing to configure — the widget reads the bar's state (`bar.transparent`) and
 colour (`bar.barForeground`) directly, so it follows the bar in and out of

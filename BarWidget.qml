@@ -385,22 +385,33 @@ BarWidget {
   //
   // A new block tints every panel towards the theme accent, the bar's version
   // of the orange LED flash (blockFlashColor 0xE04300) on the device.
+  // Light mode on a transparent bar inverts the outline: panels filled solid
+  // in the bar's contrast colour, characters in whichever theme colour stands
+  // out against it.
   function panelFill(solid) {
     var a = Color.accent
-    if (root.barTransparent && !solid) return Qt.rgba(a.r, a.g, a.b, root.flash * 0.8)
+    var flashTint = Qt.rgba(a.r, a.g, a.b, root.flash * 0.85)
+    if (root.barTransparent && !solid) {
+      if (!root.lightMode) return Qt.rgba(a.r, a.g, a.b, root.flash * 0.8)
+      var fg = root.barForeground
+      return root.flash > 0 ? Qt.tint(fg, flashTint) : fg
+    }
     var base = root.lightMode ? Color.foreground : Qt.darker(Color.background, 1.6)
-    return root.flash > 0 ? Qt.tint(base, Qt.rgba(a.r, a.g, a.b, root.flash * 0.85)) : base
+    return root.flash > 0 ? Qt.tint(base, flashTint) : base
   }
 
   function panelBorder(solid) {
-    if (root.barTransparent && !solid) return Util.alpha(root.barForeground, 0.4)
+    if (root.barTransparent && !solid) return Util.alpha(root.barForeground, root.lightMode ? 0.9 : 0.4)
     return root.lightMode
       ? Qt.darker(Color.foreground, 1.25)
       : Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.55)
   }
 
   function panelInk(solid) {
-    if (root.barTransparent && !solid) return root.barForeground
+    if (root.barTransparent && !solid) {
+      if (!root.lightMode) return root.barForeground
+      return root.barForeground.hslLightness > 0.5 ? Color.background : Color.foreground
+    }
     return root.lightMode ? Color.background : Color.foreground
   }
 
