@@ -135,6 +135,7 @@ omarchy bar set kravens.btclock refreshSeconds 60
 omarchy bar set kravens.btclock retrySeconds 5
 omarchy bar set kravens.btclock cells 7
 omarchy bar set kravens.btclock mode dark
+omarchy bar set kravens.btclock panelStyle auto
 omarchy bar set kravens.btclock currency USD
 omarchy bar set kravens.btclock provider mempool.space
 omarchy bar set kravens.btclock customMempool http://umbrel.local:3006
@@ -152,6 +153,7 @@ omarchy bar set kravens.btclock bitaxeHost 192.168.1.40
 | `retrySeconds` | `5` | 5–600, how soon to try again while no instance can be reached |
 | `cells` | `7` | 3–12 panels |
 | `mode` | `dark` | `dark` (dark panels, light text) or `light` (inverted) |
+| `panelStyle` | `auto` | `auto` (matches the bar), `solid` or `transparent` |
 | `currency` | `USD` | `USD` `EUR` `GBP` `JPY` `CHF` `CAD` `AUD` |
 | `provider` | `mempool.space` | `mempool.space` `mempool.emzy.de` `custom` — the instance to try first |
 | `customMempool` | *(empty)* | Your own mempool instance: `http(s)://host[:port]`, no path |
@@ -201,19 +203,33 @@ omarchy-shell kravens.btclock status   # every enabled screen, as text
 `status` prints one line per enabled screen - id, what the panels show, and the
 same value spelled out - with a `*` on the one showing now.
 
-## The transparent bar
+## Panel background
 
-Double clicking the bar makes it see-through and samples a contrast colour from
-whatever wallpaper ends up behind it. The panels follow: instead of seven slabs
-of theme background hanging over the wallpaper, each one becomes a faint outline
-drawn in that same contrast colour, with the character in it. In `light` mode
-the outline is inverted: each panel is filled with the contrast colour and the
-character is drawn in whichever theme colour stands out against it. The change
-fades over the bar's own 420ms transition.
+The bar background is opaque, glassy or clear, and the panels match it. The
+**Panel background** choice in the settings panel is on **Auto** by default:
 
-Nothing to configure — the widget reads the bar's state (`bar.transparent`) and
-colour (`bar.barForeground`) directly, so it follows the bar in and out of
-transparency, and follows a wallpaper or theme change while transparent.
+| Bar | Panels on Auto |
+| --- | --- |
+| Opaque | Solid: little screens of theme background |
+| Glassy | Glass: a tint over the bar's blur, so the frost carries on through them |
+| Clear | Transparent: an outline in the colour the bar draws its text in |
+
+**Solid** and **Transparent** override that whatever the bar is doing:
+
+```bash
+omarchy bar set kravens.btclock panelStyle solid
+```
+
+In `light` mode a see-through panel is inverted: filled with the bar's text
+colour, with the character in whichever theme colour stands out against it. Glass
+keeps some of the frost showing through that fill. On Auto a clear bar's panels
+fill solid, and choosing Transparent means no fill in either mode. Changes fade
+over the bar's own 420ms transition.
+
+The widget reads the bar's foreground colour (`bar.barForeground`) and its
+background setting directly, so Auto follows the bar between its looks, and
+follows a wallpaper or theme change while see-through. The settings panel's large
+preview and a home-screen card are always solid.
 
 ## Network access
 

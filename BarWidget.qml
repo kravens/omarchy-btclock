@@ -152,12 +152,59 @@ BarWidget {
   }
 
   // ---- the bar's own appearance --------------------------------------------
-  // Double clicking the bar makes it see-through and picks a foreground colour
-  // that stays legible over whatever wallpaper is behind it. Both arrive from the
-  // shell as live bindings, so the panels can follow the bar in and out of
-  // transparency instead of sitting on it as slabs of theme background.
-  readonly property bool barTransparent: root.bar ? root.bar.transparent === true : false
+  // The bar's background is opaque, glassy or none. A see-through bar samples a
+  // foreground colour that stays legible over whatever wallpaper is behind it
+  // and hands it over as a live binding, so the panels can follow the bar in and
+  // out of it instead of sitting on it as slabs of theme background.
+  //
+  // A 4.5 shell tells a widget only whether the bar is fully clear, so the
+  // glassy setting is read from the bar's own config alongside it.
+  readonly property string barLook: {
+    if (root.configuredBarLook !== "") return root.configuredBarLook
+    return root.bar && root.bar.transparent === true ? "none" : "opaque"
+  }
+
+  // The user's choice for the panel background. Auto matches the bar; the other
+  // two override it, whatever the bar and theme are doing.
+  readonly property string panelStyle: {
+    var s = String(opt("panelStyle", "auto")).toLowerCase()
+    return s === "solid" || s === "transparent" ? s : "auto"
+  }
+
+  // What the panels are drawn as. A home-screen card is not on the bar, so the
+  // bar has no say there.
+  readonly property string panelLook: {
+    if (root.home) return "solid"
+    if (root.panelStyle !== "auto") return root.panelStyle
+    return root.barLook === "glassy" ? "glass" : root.barLook === "none" ? "transparent" : "solid"
+  }
+
   readonly property color barForeground: root.bar ? root.bar.barForeground : Commons.Color.foreground
+
+  // shell.json normalises this to opaque, glassy or none; a config written
+  // before the setting existed says transparent instead, which is none.
+  property string configuredBarLook: ""
+  function readBarLook(raw) {
+    var look = ""
+    try {
+      var config = JSON.parse(String(raw || ""))
+      var bar = config && typeof config.bar === "object" && config.bar ? config.bar : {}
+      look = String(bar.background || "")
+      if (look !== "glassy" && look !== "none") look = bar.transparent === true ? "none" : "opaque"
+    } catch (e) {
+      look = ""
+    }
+    root.configuredBarLook = look
+  }
+
+  // The bar reloads this file itself, so a change arrives here as a rewrite.
+  FileView {
+    path: (Quickshell.env("HOME") || "") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.readBarLook(text())
+    onFileChanged: reload()
+  }
 
   // Closed set of mempool instances bin/btc-status knows how to read. Keeping
   // the list here as well means a typo lands on the default instance instead of
@@ -395,42 +442,61 @@ BarWidget {
   }
 
   // ---- panel colours -------------------------------------------------------
-  // Normally a panel is a little e-paper screen: dark on the theme background in
-  // dark mode, inverted in light mode. While the bar is transparent a panel is an
-  // outline instead, drawn in the bar's own contrast colour at low alpha and with
-  // the character in that same colour - the treatment the rest of the bar gets -
-  // so nothing hangs over the wallpaper in a colour picked for a solid bar.
+  // A panel is drawn one of three ways. Solid is a little e-paper screen: dark on
+  // the theme background in dark mode, inverted in light mode. Glass tints what
+  // the bar's blur shows through it, so the frost carries on through the panels.
+  // Transparent is an outline only. Both see-through looks draw in the bar's own
+  // contrast colour - the treatment the rest of the bar gets - so nothing hangs
+  // over the wallpaper in a colour picked for a solid bar.
   //
   // A new block tints every panel towards the theme accent, the bar's version
   // of the orange LED flash (blockFlashColor 0xE04300) on the device.
-  // Light mode on a transparent bar inverts the outline: panels filled solid
-  // in the bar's contrast colour, characters in whichever theme colour stands
-  // out against it.
+  //
+  // Light mode inverts a see-through panel: filled in the bar's contrast colour,
+  // characters in whichever theme colour stands out against it. Glass keeps some
+  // of the frost showing through that fill. Only a clear bar's automatic look
+  // fills solid; choosing Transparent means no fill in either mode.
+  function panelLookFor(solid) {
+    return solid ? "solid" : root.panelLook
+  }
+
+  function invertedLook(look) {
+    return root.lightMode && look !== "solid" && !(look === "transparent" && root.panelStyle === "transparent")
+  }
+
+  // Whichever theme colour stands out against `c`.
+  function against(c) {
+    var bg = Commons.Color.background
+    var fg = Commons.Color.foreground
+    return Math.abs(bg.hslLightness - c.hslLightness) > Math.abs(fg.hslLightness - c.hslLightness) ? bg : fg
+  }
+
   function panelFill(solid) {
+    var look = panelLookFor(solid)
     var a = Commons.Color.accent
+    var fg = root.barForeground
     var flashTint = Qt.rgba(a.r, a.g, a.b, root.flash * 0.85)
-    if (root.barTransparent && !solid) {
-      if (!root.lightMode) return Qt.rgba(a.r, a.g, a.b, root.flash * 0.8)
-      var fg = root.barForeground
-      return root.flash > 0 ? Qt.tint(fg, flashTint) : fg
-    }
-    var base = root.lightMode ? Commons.Color.foreground : Qt.darker(Commons.Color.background, 1.6)
+    var base
+    if (look === "solid") base = root.lightMode ? Commons.Color.foreground : Qt.darker(Commons.Color.background, 1.6)
+    else if (invertedLook(look)) base = look === "glass" ? Util.alpha(fg, 0.75) : fg
+    // Against light characters, the solid panel's own depth, seen through.
+    else if (look === "glass") base = Util.alpha(fg.hslLightness > 0.5 ? Qt.darker(against(fg), 1.6) : against(fg), 0.55)
+    else return Qt.rgba(a.r, a.g, a.b, root.flash * 0.8)
     return root.flash > 0 ? Qt.tint(base, flashTint) : base
   }
 
   function panelBorder(solid) {
-    if (root.barTransparent && !solid) return Util.alpha(root.barForeground, root.lightMode ? 0.9 : 0.4)
+    var look = panelLookFor(solid)
+    if (look !== "solid") return Util.alpha(root.barForeground, invertedLook(look) ? 0.9 : 0.4)
     return root.lightMode
       ? Qt.darker(Commons.Color.foreground, 1.25)
       : Qt.rgba(Commons.Color.muted.r, Commons.Color.muted.g, Commons.Color.muted.b, 0.55)
   }
 
   function panelInk(solid) {
-    if (root.barTransparent && !solid) {
-      if (!root.lightMode) return root.barForeground
-      return root.barForeground.hslLightness > 0.5 ? Commons.Color.background : Commons.Color.foreground
-    }
-    return root.lightMode ? Commons.Color.background : Commons.Color.foreground
+    var look = panelLookFor(solid)
+    if (look === "solid") return root.lightMode ? Commons.Color.background : Commons.Color.foreground
+    return invertedLook(look) ? against(root.barForeground) : root.barForeground
   }
 
   // Centre the string across the panels, blanks either side.
@@ -1343,6 +1409,24 @@ BarWidget {
             enabled: root.cells < 12
             onClicked: root.save("cells", root.cells + 1)
           }
+        }
+
+        PanelSectionHeader { text: "PANEL BACKGROUND"; foreground: root.ink; fontFamily: root.panelFont }
+        Choices {
+          foreground: root.ink
+          fontFamily: root.panelFont
+          options: ["Auto", "Solid", "Transparent"]
+          current: root.panelStyle.charAt(0).toUpperCase() + root.panelStyle.slice(1)
+          onChose: function (value) { root.save("panelStyle", value.toLowerCase()) }
+        }
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          wrapMode: Text.WordWrap
+          color: root.dim
+          font.family: root.panelFont
+          font.pixelSize: Style.font.caption
+          text: "Auto matches the bar: glass on a glassy bar, transparent on a clear one, solid on an opaque one."
         }
 
         PanelSectionHeader { text: "MEMPOOL INSTANCE"; foreground: root.ink; fontFamily: root.panelFont }
